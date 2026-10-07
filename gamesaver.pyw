@@ -31,7 +31,8 @@ DEFAULT_HOTKEY = "Ctrl+Alt+F5"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 BACKUP_RE = re.compile(r"^(\d{4}-\d\d-\d\d)_(\d\d)-(\d\d)-(\d\d)_(auto|manual|prerestore)\.zip$")
-KIND_LABELS = {"auto": "Automatic", "manual": "Manual", "prerestore": "Before restore"}
+KIND_LABELS = {"auto": "Automatic", "manual": "Manual", "prerestore": "Before restore",
+               "custom": "Custom"}
 
 
 # ---------------------------------------------------------------- backup core
@@ -72,17 +73,32 @@ def signature(files):
 
 
 def list_backups(game):
-    """Return [(path, when text, kind, size)] newest first."""
+    """Return [(path, when text, kind, size)] newest first.
+
+    Every .zip in the game's backup folder is listed. Files the app named
+    itself carry their date and kind in the name; anything else (e.g. a
+    backup the user renamed to describe it) is listed as "custom", dated by
+    its modification time. Custom backups are never pruned automatically."""
     d = backup_dir(game)
     out = []
     if os.path.isdir(d):
         for f in os.listdir(d):
+            if not f.lower().endswith(".zip"):
+                continue
+            path = os.path.join(d, f)
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
             m = BACKUP_RE.match(f)
             if m:
-                path = os.path.join(d, f)
                 when = f"{m.group(1)} {m.group(2)}:{m.group(3)}:{m.group(4)}"
-                out.append((path, when, m.group(5), os.path.getsize(path)))
-    out.sort(key=lambda b: os.path.basename(b[0]), reverse=True)
+                kind = m.group(5)
+            else:
+                when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime))
+                kind = "custom"
+            out.append((path, when, kind, st.st_size))
+    out.sort(key=lambda b: (b[1], os.path.basename(b[0])), reverse=True)
     return out
 
 
