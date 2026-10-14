@@ -387,7 +387,7 @@ class RestoreDialog(tk.Toplevel):
         f.pack(fill="both", expand=True)
         ttk.Label(f, text="Choose a backup to restore. Close the game (or return to its main menu) first.\n"
                           "Your current save is backed up automatically before it is replaced.\n"
-                          "Select several backups (Ctrl/Shift+click) to delete them together; "
+                          "Select several backups (Ctrl/Shift+click) and press Delete to remove them together; "
                           "only one can be restored at a time.").pack(anchor="w")
         box = ttk.Frame(f)
         box.pack(fill="both", expand=True, pady=8)
@@ -402,6 +402,7 @@ class RestoreDialog(tk.Toplevel):
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="left", fill="y")
         self.tree.bind("<Double-1>", lambda e: self.restore())
+        self.tree.bind("<Delete>", lambda e: self.delete())
 
         btns = ttk.Frame(f)
         btns.pack(fill="x")
