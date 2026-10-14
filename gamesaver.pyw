@@ -22,7 +22,7 @@ import winreg
 import winsound
 import zipfile
 from ctypes import wintypes
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 APP_NAME = "Gamesaver"
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
@@ -388,7 +388,7 @@ class RestoreDialog(tk.Toplevel):
         ttk.Label(f, text="Choose a backup to restore. Close the game (or return to its main menu) first.\n"
                           "Your current save is backed up automatically before it is replaced.\n"
                           "Select several backups (Ctrl/Shift+click) and press Delete to remove them together; "
-                          "only one can be restored at a time.").pack(anchor="w")
+                          "only one can be restored at a time. Right-click (or F2) to rename a backup.").pack(anchor="w")
         box = ttk.Frame(f)
         box.pack(fill="both", expand=True, pady=8)
         self.tree = ttk.Treeview(box, columns=("file", "when", "kind", "size"), show="headings",
@@ -403,10 +403,18 @@ class RestoreDialog(tk.Toplevel):
         sb.pack(side="left", fill="y")
         self.tree.bind("<Double-1>", lambda e: self.restore())
         self.tree.bind("<Delete>", lambda e: self.delete())
+        self.tree.bind("<F2>", lambda e: self.rename())
+        self.tree.bind("<Button-3>", self.show_menu)
+        self.menu = tk.Menu(self, tearoff=0)
+        self.menu.add_command(label="Restore", command=self.restore)
+        self.menu.add_command(label="Rename...", command=self.rename)
+        self.menu.add_separator()
+        self.menu.add_command(label="Delete", command=self.delete)
 
         btns = ttk.Frame(f)
         btns.pack(fill="x")
         ttk.Button(btns, text="Restore selected", command=self.restore).pack(side="left")
+        ttk.Button(btns, text="Rename...", command=self.rename).pack(side="left")
         ttk.Button(btns, text="Delete selected", command=self.delete).pack(side="left", padx=6)
         ttk.Button(btns, text="Open folder", command=lambda: app.open_folder(game)).pack(side="left")
         ttk.Button(btns, text="Close", command=self.destroy).pack(side="right")
@@ -435,6 +443,61 @@ class RestoreDialog(tk.Toplevel):
                                          f"from {when}?", parent=self):
             self.app.jobs.put({"op": "restore", "game": dict(self.game), "zip": path})
             self.destroy()
+
+    def show_menu(self, event):
+        """Right-click: select the row under the cursor (unless it is already part of
+        the selection) and pop up the context menu."""
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        if iid not in self.tree.selection():
+            self.tree.selection_set(iid)
+        self.tree.focus(iid)
+        single = len(self.tree.selection()) == 1
+        self.menu.entryconfig("Restore", state="normal" if single else "disabled")
+        self.menu.entryconfig("Rename...", state="normal" if single else "disabled")
+        try:
+            self.menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.menu.grab_release()
+
+    def rename(self):
+        sel = self.selected()
+        if not sel:
+            return
+        if len(sel) > 1:
+            messagebox.showinfo(APP_NAME, "Select a single backup to rename.", parent=self)
+            return
+        path = sel[0]
+        folder, old = os.path.split(path)
+        stem = old[:-4] if old.lower().endswith(".zip") else old
+        new = simpledialog.askstring(APP_NAME, "New name for this backup:", initialvalue=stem, parent=self)
+        if new is None:
+            return
+        new = new.strip()
+        if new.lower().endswith(".zip"):
+            new = new[:-4]
+        if not new:
+            return
+        if re.search(r'[<>:"/\\|?*]', new):
+            messagebox.showerror(APP_NAME, 'A file name cannot contain any of: < > : " / \\ | ? *', parent=self)
+            return
+        new_path = os.path.join(folder, new + ".zip")
+        if new_path == path:
+            return
+        if os.path.exists(new_path):
+            messagebox.showerror(APP_NAME, f"A backup named {new}.zip already exists.", parent=self)
+            return
+        try:
+            os.rename(path, new_path)
+        except OSError as e:
+            messagebox.showerror(APP_NAME, f"Could not rename:\n{e.strerror or e}", parent=self)
+            return
+        self.refresh()
+        if self.tree.exists(new_path):
+            self.tree.selection_set(new_path)
+            self.tree.focus(new_path)
+            self.tree.see(new_path)
 
     def delete(self):
         sel = self.selected()
